@@ -8,6 +8,11 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const image = body.image;
+    const additionalImages = Array.isArray(body.additionalImages)
+  ? body.additionalImages
+  : [];
+    const previousAnalysis = body.previousAnalysis || "";
+    const mode = body.mode || "initial";
 
     if (!image) {
       return Response.json(
@@ -34,10 +39,93 @@ export async function POST(request: Request) {
           content: [
             {
               type: "input_text",
-              text: `
+             text: mode === "followup" ? `
+You are continuing an existing Estate Intelligence object investigation.
+
+PREVIOUS INVESTIGATION:
+
+${previousAnalysis}
+
+The user has now supplied one or more NEW follow-up photographs because
+the previous investigation requested additional evidence.
+
+Your job is NOT to repeat the original report.
+
+Study the new photographs closely and compare them with the original
+photograph and the previous investigation.
+
+Use web search when new text, labels, model numbers, maker's marks,
+signatures, logos, or other clues can be externally verified.
+
+Focus specifically on WHAT CHANGED because of the new evidence.
+
+Respond using exactly these sections:
+
+NEW EVIDENCE
+
+Report what you can now observe in the follow-up photographs that was
+not established before.
+
+WHAT THIS RESOLVES
+
+Explain which previous uncertainties can now be resolved and why.
+
+RESEARCH & VERIFICATION
+
+Research important new clues yourself. State what external evidence
+you found and how it compares with the photographs. If something
+cannot be independently verified, say so.
+
+UPDATED IDENTIFICATION
+
+Give the most specific identification now justified by all available
+evidence. Do not claim more specificity than the evidence supports.
+
+STILL UNKNOWN
+
+List only meaningful uncertainties that remain.
+
+BEST NEXT STEP
+
+If another photograph would materially improve the identification,
+request the single most useful next photograph. If no additional
+photograph is necessary, say that the identification is sufficiently
+resolved.
+
+UPDATED CONFIDENCE
+
+Object category: Low / Medium / High
+Brand or maker: Low / Medium / High
+Specific model or age: Low / Medium / High
+
+Important:
+- Do not repeat the entire previous analysis.
+- New evidence should change the investigation only when justified.
+- Never invent information.
+- Distinguish observation from external verification.
+- Do not provide false precision about value.
+
+` : `
 You are the object investigation engine for Estate Intelligence.
 
 Your job is to INVESTIGATE the object in the photograph, not merely describe it.
+
+The user may provide multiple photographs of the same object.
+
+Treat every photograph as evidence in ONE continuing investigation.
+
+The first image is the original view of the object.
+Any later images are follow-up evidence and may show details such as
+labels, marks, signatures, tags, undersides, construction, model
+numbers, or other features requested during the investigation.
+
+Compare information across all photographs before reaching a conclusion.
+
+If a later photograph resolves something that was previously uncertain,
+update your conclusion and confidence accordingly.
+
+Do not continue asking for evidence that is already clearly visible in
+one of the supplied photographs.
 
 Imagine that an ordinary person has found this object in a home and wants to understand what it is and whether it deserves further investigation.
 
@@ -222,10 +310,15 @@ Important rules:
               `,
             },
             {
-              type: "input_image",
-              image_url: image,
-              detail: "high",
-            },
+  type: "input_image",
+  image_url: image,
+  detail: "high",
+},
+...additionalImages.map((additionalImage: string) => ({
+  type: "input_image" as const,
+  image_url: additionalImage,
+  detail: "high" as const,
+})),
           ],
         },
       ],
