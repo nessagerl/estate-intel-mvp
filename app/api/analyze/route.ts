@@ -1,8 +1,50 @@
 import OpenAI from "openai";
+import { supabaseServer } from "@/lib/supabase-server";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
+
+async function savePhoto(
+  imageDataUrl: string,
+  investigationId: number,
+  photoNumber: number
+) {
+  const matches = imageDataUrl.match(/^data:(.+);base64,(.+)$/);
+
+  if (!matches) {
+    throw new Error("Invalid image data.");
+  }
+
+  const contentType = matches[1];
+  const base64Data = matches[2];
+  const imageBuffer = Buffer.from(base64Data, "base64");
+
+  const extension = contentType.split("/")[1] || "jpg";
+  const storagePath = `${investigationId}/photo-${photoNumber}.${extension}`;
+
+  const { error: uploadError } = await supabaseServer.storage
+    .from("investigation-photos")
+    .upload(storagePath, imageBuffer, {
+      contentType,
+      upsert: false,
+    });
+
+  if (uploadError) {
+    throw uploadError;
+  }
+
+  const { error: databaseError } = await supabaseServer
+    .from("investigation_photos")
+    .insert({
+      investigation_id: investigationId,
+      storage_path: storagePath,
+    });
+
+  if (databaseError) {
+    throw databaseError;
+  }
+}
 
 export async function POST(request: Request) {
   try {
@@ -13,6 +55,7 @@ export async function POST(request: Request) {
   : [];
     const previousAnalysis = body.previousAnalysis || "";
     const mode = body.mode || "initial";
+    const investigationId = body.investigationId || null;
 
     if (!image) {
       return Response.json(
@@ -324,17 +367,74 @@ Important rules:
       ],
     });
 
-    return Response.json({
-      success: true,
-      analysis: response.output_text,
-    });
-  } catch (error) {
-    console.error("Estate Intelligence analysis error:", error);
+    let investigation = null;
 
-    return Response.json({
+if (mode === "initial") {
+  const { data, error } = await supabaseServer
+    .from("investigations")
+    .insert({
+      status: "active",
+      current_analysis: response.output_text,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Supabase investigation error:", error);
+  } else {
+  investigation = data;
+
+  await savePhoto(image, data.id, 1);
+  }
+}
+
+if (mode === "followup" && investigationId && additionalImages.length > 0) {
+  const newestPhoto = additionalImages[additionalImages.length - 1];
+
+  const { count, error: countError } = await supabaseServer
+    .from("investigation_photos")
+    .select("*", { count: "exact", head: true })
+    .eq("investigation_id", investigationId);
+
+  if (countError) {
+    throw countError;
+  }
+
+  const nextPhotoNumber = (count || 0) + 1;
+
+  await savePhoto(
+    newestPhoto,
+    investigationId,
+    nextPhotoNumber
+  );
+
+  const { error: updateError } = await supabaseServer
+    .from("investigations")
+    .update({
+      current_analysis: response.output_text,
+    })
+    .eq("id", investigationId);
+
+  if (updateError) {
+    throw updateError;
+  }
+}
+
+return Response.json({
   success: true,
   analysis: response.output_text,
-  debug: response.output,
+  investigation,
 });
-  }
+
+  } catch (error) {
+  console.error("Estate Intelligence analysis error:", error);
+
+  return Response.json(
+    {
+      success: false,
+      message: "We couldn't analyze this item.",
+    },
+    { status: 500 }
+  );
+}
 }

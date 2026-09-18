@@ -11,6 +11,7 @@ export default function ScanPage() {
   const [analysis, setAnalysis] = useState<string | null>(null);
   const [followUpAnalysis, setFollowUpAnalysis] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [investigationId, setInvestigationId] = useState<number | null>(null);
 
   async function handlePhoto(file: File | undefined) {
     if (!file) return;
@@ -89,6 +90,9 @@ function handleAdditionalPhoto(file: File | undefined) {
       }
 
       setAnalysis(data.analysis);
+      if (data.investigation?.id) {
+  setInvestigationId(data.investigation.id);
+}
     } catch (err) {
       console.error(err);
       setError("We couldn't analyze this item. Please try again.");
@@ -119,6 +123,7 @@ async function investigateFurther() {
         additionalImages: photosForInvestigation,
         previousAnalysis: followUpAnalysis || analysis,
         mode: "followup",
+        investigationId: investigationId,
       }),
     });
 
@@ -141,6 +146,33 @@ async function investigateFurther() {
     setError("We couldn't investigate the new evidence. Please try again.");
   } finally {
     setIsAnalyzing(false);
+  }
+}
+
+async function saveToMyStuff() {
+  if (!investigationId) return;
+
+  try {
+    const response = await fetch("/api/save-asset", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        investigationId: investigationId,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || "Save failed.");
+    }
+
+    alert("Saved to My Stuff!");
+  } catch (error) {
+    console.error(error);
+    alert("We couldn't save this item.");
   }
 }
 
@@ -282,6 +314,17 @@ async function investigateFurther() {
     </div>
   </div>
 )}
+
+{analysis && investigationId && (
+  <button
+    type="button"
+    onClick={saveToMyStuff}
+    className="mt-6 w-full rounded-2xl bg-stone-900 px-5 py-4 text-lg font-semibold text-white"
+  >
+    Save to My Stuff
+  </button>
+)}
+
         {analysis && (
   <div className="mt-6 rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
     <p className="text-lg font-semibold">
