@@ -1,0 +1,6 @@
+import {requireUser,fail} from "@/lib/auth";
+import {supabaseServer} from "@/lib/supabase-server";
+import {generateValuation} from "@/lib/valuation-server";
+function valid(x:unknown){const id=Number(x);return Number.isSafeInteger(id)&&id>0?id:null;}
+export async function GET(request:Request){try{const user=await requireUser(request);const id=valid(new URL(request.url).searchParams.get("investigationId"));if(!id)return Response.json({message:"Invalid exploration"},{status:400});const {data:inv}=await supabaseServer.from("investigations").select("id").eq("id",id).eq("user_id",user.id).is("deleted_at",null).maybeSingle();if(!inv)return Response.json({message:"Exploration not found"},{status:404});const {data,error}=await supabaseServer.from("investigation_valuations").select("id,created_at,valuation").eq("investigation_id",id).eq("user_id",user.id).order("created_at",{ascending:false}).limit(30);if(error)throw error;return Response.json({history:data||[]});}catch(e){return fail(e)}}
+export async function POST(request:Request){try{const user=await requireUser(request);const id=valid((await request.json()).investigationId);if(!id)return Response.json({message:"Invalid exploration"},{status:400});const saved=await generateValuation(id,user.id);return Response.json({success:true,entry:saved});}catch(e){console.error("Valuation error",e);return fail(e)}}

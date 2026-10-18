@@ -1,0 +1,16 @@
+import OpenAI from "openai";
+import {supabaseServer} from "@/lib/supabase-server";
+import {parseValuation} from "@/lib/valuation";
+const ai=new OpenAI({apiKey:process.env.OPENAI_API_KEY});
+export async function generateValuation(investigationId:number,userId:string){
+ const {data:inv,error}=await supabaseServer.from("investigations").select("id,current_analysis").eq("id",investigationId).eq("user_id",userId).is("deleted_at",null).maybeSingle();if(error)throw error;if(!inv)throw new Error("Exploration not found");
+ const [{data:evidence,error:eError},{data:photos,error:pError}]=await Promise.all([
+  supabaseServer.from("investigation_evidence").select("details,condition,source,created_at").eq("investigation_id",investigationId).eq("user_id",userId).order("created_at",{ascending:true}),
+  supabaseServer.from("investigation_photos").select("storage_path").eq("investigation_id",investigationId).order("created_at",{ascending:true}).limit(12)]);
+ if(eError)throw eError;if(pError)throw pError;
+ const images=await Promise.all((photos||[]).map(async p=>{const {data,error}=await supabaseServer.storage.from("investigation-photos").createSignedUrl(p.storage_path,900);if(error||!data?.signedUrl)throw error||new Error("Photo unavailable");return {type:"input_image" as const,image_url:data.signedUrl,detail:"high" as const}}));
+ const prompt=`Estimate five distinct USD values for the pictured item, using all evidence. Values: resale (ordinary secondary-market achievable sale), retail_replacement (comparable retail purchase), auction (likely auction hammer price before fees), liquidation (quick sale), insurance_replacement (approximate comparable replacement cost, NOT a formal appraisal). Provide a LOW and HIGH for each only when evidence reasonably supports a range; otherwise low/high=null and confidence=insufficient. Avoid fabricated market comps or precise claims. You may web search for real comparable market data, but cite actual URLs in comparables only when verified; distinguish asking prices from completed sales. If no reliable comparables, leave comparables empty. Explain the evidence and uncertainties, including condition, authentication, and location differences. The user's statements are unverified claims. Output ONLY JSON with schema {"currency":"USD","item_summary":"...","estimates":{"resale":{"low":null,"high":null,"confidence":"insufficient","reason":"..."},"retail_replacement":...,"auction":...,"liquidation":...,"insurance_replacement":...},"factors":["..."],"needed_evidence":["..."],"comparables":["verified URLs only"],"caveat":"Preliminary AI estimates, not a professional appraisal."}. Every estimate must have low,high,confidence,reason. Existing research: ${String(inv.current_analysis||"").slice(0,13000)}. Written evidence: ${JSON.stringify(evidence||[]).slice(0,12000)}`;
+ const r=await ai.responses.create({model:"gpt-5.4-mini",tools:[{type:"web_search"}],input:[{role:"user",content:[{type:"input_text",text:prompt},...images]}]});
+ const valuation=parseValuation(r.output_text);
+ const {data:saved,error:saveError}=await supabaseServer.from("investigation_valuations").insert({investigation_id:investigationId,user_id:userId,valuation}).select("id,created_at,valuation").single();if(saveError)throw saveError;return saved;
+}

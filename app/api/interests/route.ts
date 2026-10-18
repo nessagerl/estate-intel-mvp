@@ -1,0 +1,4 @@
+import { supabaseServer } from "@/lib/supabase-server";
+import { requireUser, fail } from "@/lib/auth";
+export async function GET(request:Request){try{const user=await requireUser(request);const {data,error}=await supabaseServer.from("buyer_interests").select("id,category,notes").eq("user_id",user.id);if(error)throw error;return Response.json({success:true,interests:data})}catch(e){return fail(e)}}
+export async function POST(request:Request){try{const user=await requireUser(request);const {category,notes}=await request.json();if(typeof category!=="string"||!category.trim()||category.length>100)return Response.json({success:false,message:"Enter a category"},{status:400});const {data,error}=await supabaseServer.from("buyer_interests").insert({user_id:user.id,category:category.trim(),notes:typeof notes==="string"?notes.slice(0,1000):""}).select().single();if(error)throw error;return Response.json({success:true,interest:data})}catch(e){return fail(e)}}
