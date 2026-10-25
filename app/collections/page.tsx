@@ -1,5 +1,5 @@
-import {assetDisplayName} from '@/lib/asset-short-name';
 'use client';
+import {assetDisplayName} from '@/lib/asset-short-name';
 import {useEffect,useState} from 'react';
 import {authorizedFetch} from '@/lib/supabase-browser';
 import Link from 'next/link';
