@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import {shortAssetName} from "@/lib/asset-short-name";
 import {generateValuation} from "@/lib/valuation-server";
 import { supabaseServer } from "@/lib/supabase-server";
 import { requireUser, fail } from "@/lib/auth";
@@ -34,7 +35,7 @@ export async function POST(request: Request) {
     }));
     const {data:detailRows}=await supabaseServer.from("investigation_evidence").select("details,condition,source").eq("investigation_id",id).eq("user_id",user.id).order("created_at",{ascending:true});
     const userEvidence=(detailRows||[]).map(x=>`Source: ${x.source}; condition: ${x.condition}; details: ${x.details}`).join("\n").slice(0,12000);
-    const prompt = `User-provided evidence (treat as reported, not independently verified): ${userEvidence||"None yet"}. Analyze this item using all provided photos and any prior research. Return ONLY a valid JSON object, no markdown fences or commentary, with this exact structure: {"schema_version":2,"title":"short specific item name","summary":"2 or 3 short sentences, max 65 words, identifying the item and biggest uncertainty; DO NOT invent a monetary value (valuation is computed separately)","characteristics":["up to 5 short distinctive characteristics"],"observed":["up to 5 photo-verifiable facts"],"inferred":["up to 3 explicitly uncertain interpretations"],"unknowns":["up to 3 important unresolved facts"],"next_steps":["up to 3 specific ways to improve identification"]}. Keep bullets short, avoid repetition across fields, separate observed from inferred, don't invent facts or sources. If new evidence contradicts earlier findings, favor new photos. ${mode === "followup" ? "Prior research (may be legacy text or JSON): " + previous.slice(0,10000) : "This is the initial analysis."}`;
+    const prompt = `User-provided evidence (treat as reported, not independently verified): ${userEvidence||"None yet"}. Analyze this item using all provided photos and any prior research. Return ONLY a valid JSON object, no markdown fences or commentary, with this exact structure: {"schema_version":2,"title":"short specific item name","summary":"2 or 3 short sentences, max 65 words, identifying the item and biggest uncertainty; DO NOT invent a monetary value (valuation is computed separately)","characteristics":["up to 5 short distinctive characteristics"],"observed":["up to 5 photo-verifiable facts"],"inferred":["up to 3 explicitly uncertain interpretations"],"unknowns":["up to 3 important unresolved facts"],"next_steps":["up to 3 specific ways to improve identification"],"questions":[{"id":"q1","question":"short item-specific question","options":["Yes","No","Not sure"],"photo_if":"Yes"}]}. Generate 1-3 item-specific, high-impact tap-to-answer questions in questions, each with 2-4 short options including Not sure when useful. Use photo_if only if that answer merits a close-up photograph; otherwise omit photo_if. Never ask for typing. Keep bullets short, avoid repetition across fields, separate observed from inferred, don't invent facts or sources. If new evidence contradicts earlier findings, favor new photos. ${mode === "followup" ? "Prior research (may be legacy text or JSON): " + previous.slice(0,10000) : "This is the initial analysis."}`;
     const response = await openai.responses.create({ model: "gpt-5.4-mini", tools: [{ type: "web_search" }], input: [{ role: "user", content: [{ type: "input_text", text: prompt }, ...images] }] });
     const analysis = response.output_text;
     if (!(existingPhotos||[]).some(x=>x.storage_path===storagePath)) {
@@ -43,6 +44,11 @@ export async function POST(request: Request) {
     }
     const { error: updateError } = await supabaseServer.from("investigations").update({ current_analysis: analysis }).eq("id", id).eq("user_id", user.id);
     if (updateError) throw updateError;
+    // Name only automatically created placeholders; never overwrite a user's name.
+    const {data:linked}=await supabaseServer.from("asset_investigations").select("asset_id").eq("investigation_id",id);
+    const assetIds=(linked||[]).map(x=>x.asset_id);
+    if(assetIds.length){await supabaseServer.from("assets").update({name:shortAssetName(analysis, (()=>{try{return JSON.parse(analysis).title as string}catch{return null}})())}).eq("user_id",user.id).is("deleted_at",null).in("id",assetIds).eq("name","New Item");}
+
     let valuationUpdated=false;let valuationWarning="";try{await generateValuation(id,user.id);valuationUpdated=true;}catch(e){console.error("Automatic valuation failed",e);valuationWarning="Item analyzed, but valuation is not available yet. You can retry from Value Insights.";}return Response.json({ success: true, analysis, investigationId: id, mode, valuationUpdated, valuationWarning });
   } catch (error) { console.error("Analysis error", error); return fail(error); }
 }

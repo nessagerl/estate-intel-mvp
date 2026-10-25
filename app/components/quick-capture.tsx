@@ -1,6 +1,5 @@
 "use client";
 import {useRef,useState} from "react";
-import {useRouter} from "next/navigation";
 import {authorizedFetch,supabaseBrowser} from "@/lib/supabase-browser";
 
 const MAX_WAIT_MS=25000;
@@ -15,7 +14,7 @@ async function responseData(response:Response){
  return data;
 }
 export default function QuickCapture({compact=false}:{compact?:boolean}){
- const input=useRef<HTMLInputElement>(null),router=useRouter();
+ const input=useRef<HTMLInputElement>(null);
  const[busy,setBusy]=useState(false),[stage,setStage]=useState(""),[error,setError]=useState("");
  async function capture(file?:File){
   if(!file||busy)return;
