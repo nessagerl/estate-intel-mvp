@@ -1,0 +1,3 @@
+'use client';
+import Link from 'next/link';
+export default function AuthRequired(){const next=typeof window==='undefined'?'/my-stuff':window.location.pathname+window.location.search;return <section className="mx-auto mt-10 max-w-xl rounded-2xl border bg-white p-8 text-center text-stone-900"><h2 className="text-2xl font-bold">Sign in to Estate Intelligence</h2><p className="mt-3 text-stone-600">Sign in to explore and organize your belongings, photographs, and value insights.</p><Link href={`/auth?next=${encodeURIComponent(next)}`} className="mt-5 inline-block rounded-xl bg-stone-900 px-5 py-3 font-semibold text-white">Sign In / Create Account</Link></section>}
